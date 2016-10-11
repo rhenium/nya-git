@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+
+base_branch = ARGV[0] || `git config rhe.baseBranch`.chomp
+base_branch = "master" if base_branch.empty?
+
+excludes = `git config rhe.excludeBranchPrefix`.split(?,).map { |x| x.chomp }
+sync_remotes = `git config rhe.syncBranch`.split(?,)
+  .map { |x| x.chomp.split(?:) }.to_h
+
+refs_out = `
+  git for-each-ref \
+    --sort=-committerdate \
+    --format='%(HEAD)\t%(objectname)\t%(refname)\t%(committerdate:relative)' \
+    refs/heads`
+$?.success? or raise
+branches = refs_out.lines.map { |x|
+  x.chomp.split(?\t).tap { |q|
+    q[2].gsub!(/\Arefs\/heads\//, "")
+  }
+}.reject { |x|
+  excludes.any? { |c| x[2].start_with?(c) }
+}
+
+merged_refs_out = `
+  git for-each-ref \
+    --merged #{base_branch} \
+    --format='%(refname)' \
+    refs/heads`
+$?.success? or raise
+merged_branch_names = merged_refs_out.lines.map { |x|
+  x.chomp.gsub(/\Arefs\/heads\//, "")
+}
+
+
+maxreflen = branches.map { |x| x[2].size }.max
+branches.each do |is_head, sha1, ref, reldate|
+  merged = merged_branch_names.include?(ref)
+
+  sync = ""
+  sync_remotes.each do |key, name|
+    if sha1 == `git rev-parse #{name}/#{ref} 2>/dev/null`.chomp
+      sync << key
+    else
+      sync << " "
+    end
+  end
+
+  msg = "#{is_head} #{sync} #{sha1[0, 12]} #{ref.ljust(maxreflen)} (#{reldate})"
+
+  if merged
+    puts msg
+  else
+    puts "\e[32m%s\e[m" % msg
+  end
+end

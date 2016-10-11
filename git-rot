@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+
+base=$(git config rhe.baseBranch || echo master)
+
+git rebase -i --autosquash $(git merge-base HEAD "$base") "$@"

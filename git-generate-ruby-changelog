@@ -1,0 +1,28 @@
+#!/usr/bin/env ruby
+
+sha1 = ARGV[0] and (system("git cherry-pick #{sha1}") or raise)
+
+msg = `git show -s --format=%B HEAD` or raise
+date = Time.now.strftime("%a %b %e %H:%M:%S %Y")
+name = "#{`git show -s --format=%an`.chomp}  <#{`git show -s --format=%ae`.chomp}>"
+
+changes = msg.lines[1..-1].drop_while { |line|
+  /^\* / !~ line
+}.map { |line|
+  case line.chomp!
+  when /^\* /
+    ?\t<<line
+  when /^$/
+    line
+  else
+    ?\t<<line
+  end
+}.drop_while { |line|
+  line.empty?
+}.reverse.drop_while { |line|
+  line.empty?
+}.reverse.join(?\n)
+
+entry = "#{date}  #{name}\n\n" << changes << ?\n << ?\n
+
+open("ChangeLog", "r+").write(entry<<open("ChangeLog").read)
