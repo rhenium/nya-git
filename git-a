@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 
-base_branch = ARGV[0] || `git config rhe.baseBranch`.chomp
+show_refs = ARGV[0] == "-a" ? "refs" : "refs/heads"
+
+base_branch = `git config rhe.baseBranch`.chomp
 base_branch = "master" if base_branch.empty?
 
 excludes = `git config rhe.excludeBranchPrefix`.split(?,).map { |x| x.chomp }
@@ -11,7 +13,7 @@ refs_out = `
   git for-each-ref \
     --sort=-committerdate \
     --format='%(HEAD)\t%(objectname)\t%(refname)\t%(committerdate:relative)' \
-    refs/heads`
+    #{show_refs}`
 $?.success? or raise
 branches = refs_out.lines.map { |x|
   x.chomp.split(?\t).tap { |q|
@@ -25,7 +27,7 @@ merged_refs_out = `
   git for-each-ref \
     --merged #{base_branch} \
     --format='%(refname)' \
-    refs/heads`
+    #{show_refs}`
 $?.success? or raise
 merged_branch_names = merged_refs_out.lines.map { |x|
   x.chomp.gsub(/\Arefs\/heads\//, "")
