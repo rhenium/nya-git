@@ -2,5 +2,16 @@
 set -e
 
 base=$(git config rhe.baseBranch || echo master)
+case "$1" in
+	-*)
+		;;
+	*)
+		if git rev-parse --verify "$1" >/dev/null 2>&1
+		then
+			base=$1
+			shift
+		fi
+		;;
+esac
 
 git rebase -i --autosquash $(git merge-base HEAD "$base") "$@"
