@@ -1,0 +1,8 @@
+#!/bin/sh
+
+commit=$1
+
+[ "$commit" ] ||
+	commit=HEAD
+
+git log -1 --pretty=format:'%h ("%s", %ad)' --abbrev=12 --date=format:%Y-%m-%d "$commit"
