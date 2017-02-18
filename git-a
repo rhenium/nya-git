@@ -6,7 +6,7 @@ base_branch = `git config rhe.baseBranch`.chomp
 base_branch = "master" if base_branch.empty?
 
 excludes = `git config rhe.excludeBranchPrefix`.split(?,).map { |x| x.chomp }
-sync_remotes = `git config rhe.syncBranch`.split(?,)
+sync_remotes = `git config rhe.syncRemotes`.split(?,)
   .map { |x| x.chomp.split(?:) }.to_h
 
 refs_out = `

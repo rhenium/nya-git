@@ -9,10 +9,12 @@ git-a
 ローカルブランチを最終 committer date 順に並べて表示する
 
     $ cat .git/config
+    ...
     [rhe]
     	baseBranch = master
     	excludeBranchPrefix = sync/,gh-pages
-    	syncBranch = R:origin,G:github,U:upstream
+    	syncRemotes = R:origin,G:github,U:upstream
+    ...
     $ git a
           c618626eee63 wip-topic/asn1-fixups                            (6 hours ago)
     * R   8c26088ebd02 utils                                            (19 hours ago)
