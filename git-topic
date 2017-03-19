@@ -131,7 +131,7 @@ when "test"
     sh("git --no-pager log -1 --decorate --color #{commit}", quiet: false)
 
     if !opts[:force]
-      note = sh("git notes --ref=git-topic-test show #{commit}", abort_on_failure: false)
+      note = sh("git notes --ref=git-topic-test show #{commit}^{tree}", abort_on_failure: false)
       if $? == 0 # Found!
         puts
         puts "Found successful record. Skipping commit #{i + 1}/#{commits.size}..."
@@ -161,7 +161,7 @@ when "test"
 
     if !failed && !opts[:dry_run]
       puts "Recording successful result to notes."
-      sh "git notes --ref=git-topic-test add -f -m SUCCESSFUL #{commit}"
+      sh "git notes --ref=git-topic-test add -f -m SUCCESSFUL #{commit}^{tree}"
     end
 
     sh "git update-index --refresh"
