@@ -1,0 +1,185 @@
+#!/usr/bin/env ruby
+require "optparse"
+require "shellwords"
+
+STDOUT.sync = true
+
+def sh(command, quiet: true, abort_on_failure: true)
+  ret = ""
+  IO.popen(command, err: [:child, :out]) do |io|
+    begin
+      while s = io.readpartial(1024)
+        ret << s
+        STDOUT << s unless quiet
+      end
+    rescue EOFError
+    end
+    io.close
+  end
+  return ret if $? == 0
+  if abort_on_failure
+    STDERR.puts "command `#{command}' failed: $? = #{$?.exitstatus}"
+    STDERR.print ret
+    exit 1
+  end
+  ret
+end
+
+def rev_parse(commit)
+  sh("git rev-parse #{commit.shellescape}").chomp
+end
+
+def abbrev_ref(commit)
+  sh("git rev-parse --abbrev-ref #{commit.shellescape}").chomp
+end
+
+def config(name, default = nil)
+  ret = sh("git config --null #{name.shellescape}", abort_on_failure: false)
+  if $? == 0
+    ret.chomp("\0")
+  else
+    default
+  end
+end
+
+def config_multi(name, default = nil)
+  ret = sh("git config --get-all --null #{name.shellescape}", abort_on_failure: false)
+  if $? == 0
+    ret.split("\0")
+  else
+    default
+  end
+end
+
+def usage
+  print <<EOS
+usage: git topic <subcommand> [options] [args]
+
+Available subcommands:
+   new <name> [--base <committish>]
+        fork a new topic branch 'wip-topic/<name>' from the commit <base>.
+   unwip [<branch>]
+        remove wip marker from the topic <branch>.
+   reject [<branch>]
+        add abondoned marker to the topic <branch>.
+   test [<branch>] [--base=<committish>] [--test=<commands>] [--before=<commands>] [--after=<commands>] [-n|--dry-run]
+        run tests <command> against all the commits in the topic <branch>.
+
+Available configurations:
+   git-topic.baseBranch
+        the base branch used used by topic-new and topic-test. default: 'master'
+   git-topic.testCommand
+        the test command run on a shell. used by topic-test. default: 'false'
+EOS
+  exit 1
+end
+
+case cmd = ARGV.shift
+when "new"
+  opts = {}
+  OptionParser.new { |o|
+    o.on("--base=<committish>") { |v| opts[:base] = v }
+  }.parse!(ARGV)
+
+  name = ARGV.shift or usage
+  base = rev_parse(opts[:base] || config("git-topic.base") || "master")
+  sh "git update-index --refresh" if base != rev_parse("HEAD")
+  sh "git checkout -b wip-topic/#{name.shellescape} #{base.shellescape}"
+when "unwip", "reject"
+  branch = abbrev_ref(ARGV.shift || "HEAD")
+  prefix, name = branch.split("/", 2)
+  if prefix != "wip-topic"
+    puts "branch '#{branch}' is not marked as work in progress"
+    exit 1
+  end
+  new_prefix = cmd == "unwip" ? "topic" : "reject"
+  sh "git branch -m #{branch.shellescape} #{new_prefix}/#{name.shellescape}"
+when "test"
+  opts = {}
+  OptionParser.new { |o|
+    o.on("--base=<committish>") { |v| opts[:base] = v }
+    o.on("--test=<commands>") { |v| (opts[:test] ||= []) << v }
+    o.on("-n", "--dry-run") { |v| opts[:dry_run] = true }
+    o.on("-k", "--keep-going") { |v| opts[:keep_going] = true }
+    o.on("-f", "--force") { |v| opts[:force] = true }
+  }.parse!(ARGV)
+
+  orig_branch = abbrev_ref("HEAD")
+  base = abbrev_ref(opts[:base] || config("git-topic.base") || "master")
+  branch = ARGV.empty? ? orig_branch : abbrev_ref(ARGV.shift)
+  test = opts[:test] || config_multi("git-topic.test", [])
+  commits = sh("git rev-list #{base.shellescape}..#{branch.shellescape}").split
+  if commits.empty?
+    STDERR.puts "Empty commit range #{base}..#{branch}. Aborting."
+    exit 1
+  end
+  sh "git update-index --refresh"
+
+  puts "#" * 80
+  puts "Running test code against #{commits.size} commit(s):"
+  sh("git log --oneline --decorate --color #{base.shellescape}..#{branch.shellescape}", quiet: false)
+  puts
+  puts "The following command(s) will be run against each commit:"
+  puts test.map { |c| "  - #{c}" }
+  puts
+
+  failed = false
+  commits.reverse_each.with_index do |commit, i|
+    puts "#" * 80
+
+    puts "Running test against commit #{i + 1}/#{commits.size}..."
+    sh("git --no-pager log -1 --decorate --color #{commit}", quiet: false)
+
+    if !opts[:force]
+      note = sh("git notes --ref=git-topic-test show #{commit}", abort_on_failure: false)
+      if $? == 0 # Found!
+        puts
+        puts "Found successful record. Skipping commit #{i + 1}/#{commits.size}..."
+        next
+      end
+    end
+
+    puts
+    puts "Checking out #{commit}..."
+    unless opts[:dry_run]
+      sh "git checkout #{commit}"
+    end
+
+    test.each_with_index do |command, j|
+      puts "Running command #{j + 1}/#{test.size}: #{command}"
+      unless opts[:dry_run]
+        out = sh(command, quiet: false, abort_on_failure: false)
+        if $? != 0
+          STDERR.puts "command `#{command}' failed: $? = #{$?.exitstatus}"
+          failed = true
+          next if opts[:keep_going]
+          puts "TEST FAILED"
+          exit 1
+        end
+      end
+    end
+
+    if !failed && !opts[:dry_run]
+      puts "Recording successful result to notes."
+      sh "git notes --ref=git-topic-test add -f -m SUCCESSFUL #{commit}"
+    end
+
+    sh "git update-index --refresh"
+  end
+
+  puts "#" * 80
+  if failed
+    puts "TEST FAILED"
+  else
+    if opts[:dry_run]
+      puts "TEST SUCCESSFUL (--dry-run)"
+    else
+      puts "TEST SUCCESSFUL"
+    end
+  end
+  if !opts[:dry_run]
+    sh "git checkout #{orig_branch.shellescape}"
+  end
+else
+  usage
+end

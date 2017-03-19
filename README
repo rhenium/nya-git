@@ -38,6 +38,18 @@ git-a
     |
     カレントブランチ
 
+
+git-topic
+---------
+
+トピックブランチを管理する
+
+### git topic test [<branch>] [--base=<base>] [--test=<command>...] [-n|--dry-run] [-f|--force] [-k|--keep-going]
+
+ブランチ branch の全コミット（git rev-list base..branch）について --test
+もしくは git-topic.test で設定されたテストコードが正常に実行できることを確認する
+
+
 git-generate-ruby-changelog
 ---------------------------
 
